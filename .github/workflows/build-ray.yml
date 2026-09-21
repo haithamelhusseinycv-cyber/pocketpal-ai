@@ -56,7 +56,8 @@ jobs:
           git fetch --depth=1 origin "$BASE"
           git checkout --detach "$BASE"
           git checkout Ray -- ray scripts/ray .github/workflows/build-ray.yml
-          git add ray scripts/ray .github/workflows/build-ray.yml
+          git add ray scripts/ray
+          git add -f .github/workflows/build-ray.yml
           git -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
               -c user.name="github-actions[bot]" \
               commit --allow-empty -m "ci: restore thin RAY overlay kit on pinned base"
