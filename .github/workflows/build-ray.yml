@@ -4,9 +4,9 @@ name: RAY build (upstream + overlay)
 #   ray/ray-build-full.patch   the full RAY delta (binary-safe)
 #   ray/BASE_COMMIT            the pristine upstream commit it was cut against
 #   scripts/ray/*.sh           the applier + regenerator
-# The rest of the tree is whatever upstream is. CI checks out this branch, the
-# applier lays the RAY delta onto the tree, the JS gates run, and then the APK is
-# built. To move to a newer upstream: re-cut with scripts/ray/regen-ray-patch.sh.
+# CI checks out this branch, restores the pinned upstream tree, lays the RAY
+# delta onto it, runs the JS gates, then builds the APK.
+# To move to a newer upstream: re-cut with scripts/ray/regen-ray-patch.sh.
 
 on:
   workflow_dispatch:
@@ -37,23 +37,36 @@ jobs:
     steps:
       - name: Checkout overlay branch
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: Ray
 
       - name: Show pinned base
+        id: pin
         run: |
+          BASE="$(tr -d '[:space:]' < ray/BASE_COMMIT)"
           echo "HEAD:        $(git rev-parse HEAD)"
-          echo "RAY base:    $(cat ray/BASE_COMMIT)"
+          echo "RAY base:    $BASE"
           echo "patch bytes: $(wc -c < ray/ray-build-full.patch)"
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
 
-      # Apply the RAY delta onto the tree. Fails loudly (non-zero) if the patch
-      # does not apply or the overlay did not fully land — never builds a
-      # half-patched app.
+      - name: Restore pinned upstream tree
+        run: |
+          BASE="${{ steps.pin.outputs.base }}"
+          git fetch --depth=1 origin "$BASE"
+          git checkout --detach "$BASE"
+          git checkout Ray -- ray scripts/ray .github/workflows/build-ray.yml
+          git add ray scripts/ray .github/workflows/build-ray.yml
+          git -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              -c user.name="github-actions[bot]" \
+              commit --allow-empty -m "ci: restore thin RAY overlay kit on pinned base"
+
       - name: Apply RAY overlay
         run: |
           chmod +x scripts/ray/apply-ray-patch.sh
           if [ "${{ inputs.three_way }}" = "true" ]; then
-            # 3-way may exit 6 (conflicts to resolve) — fail the run with a clear message.
             set +e
-            scripts/ray/apply-ray-patch.sh --3way --base ""
+            scripts/ray/apply-ray-patch.sh --3way --skip-base
             code=$?
             set -e
             if [ $code -eq 6 ]; then
@@ -64,11 +77,9 @@ jobs:
               exit $code
             fi
           else
-            scripts/ray/apply-ray-patch.sh --base ""
+            scripts/ray/apply-ray-patch.sh --skip-base
           fi
 
-      # Fast pure-JS gates — these need no Android SDK and catch a broken overlay
-      # before the expensive native build.
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -87,8 +98,6 @@ jobs:
       - name: Verify Android payload manifest
         run: node scripts/verify-android-payload.js || echo "payload manifest check soft-failed"
 
-      # Everything below is the native build — skipped when skip_apk is set so you
-      # can validate a freshly re-cut patch in ~2 minutes.
       - name: APK build gate
         if: ${{ inputs.skip_apk }}
         run: echo "skip_apk=true — overlay applied and JS gates passed; skipping native build."

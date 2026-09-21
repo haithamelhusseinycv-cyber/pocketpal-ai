@@ -9,16 +9,18 @@
 # conflicting source files.
 #
 # Usage:
-#   scripts/ray/apply-ray-patch.sh [--check] [--3way] [--patch PATH] [--base COMMIT]
+#   scripts/ray/apply-ray-patch.sh [--check] [--3way] [--skip-base] [--patch PATH] [--base COMMIT]
 #
 # Flags:
-#   --check    Verify the patch applies cleanly, then exit (do NOT modify tree).
-#   --3way     Use `git apply --3way` so a drifted base produces merge conflicts
-#              you can resolve, instead of a hard fail. Use this when rebasing
-#              the patch onto a newer upstream commit.
-#   --patch P  Path to the patch (default: ray/ray-build-full.patch).
-#   --base C   Expected upstream base commit (default: contents of ray/BASE_COMMIT).
-#              Pass --base "" to skip the base-commit guard.
+#   --check      Verify the patch applies cleanly, then exit (do NOT modify tree).
+#   --3way       Use `git apply --3way` so a drifted base produces merge conflicts
+#                you can resolve, instead of a hard fail. Use this when rebasing
+#                the patch onto a newer upstream commit.
+#   --skip-base  Do not compare HEAD to ray/BASE_COMMIT. Needed after CI restores
+#                the overlay kit on top of the pinned base (HEAD changes).
+#   --patch P    Path to the patch (default: ray/ray-build-full.patch).
+#   --base C     Expected upstream base commit (default: contents of ray/BASE_COMMIT).
+#                Pass --skip-base instead of --base "" — empty --base is ignored.
 #
 # Exit codes:
 #   0  success (or --check passed)
@@ -37,19 +39,22 @@ BASE_FILE="ray/BASE_COMMIT"
 MODE="apply"      # apply | check
 THREEWAY=""
 EXPECTED_BASE=""
+BASE_SET=0
+SKIP_BASE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --check)  MODE="check"; shift ;;
-    --3way)   THREEWAY="--3way"; shift ;;
-    --patch)  PATCH="$2"; shift 2 ;;
-    --base)   EXPECTED_BASE="$2"; shift 2 ;;
+    --check)     MODE="check"; shift ;;
+    --3way)      THREEWAY="--3way"; shift ;;
+    --skip-base) SKIP_BASE=1; shift ;;
+    --patch)     PATCH="$2"; shift 2 ;;
+    --base)      EXPECTED_BASE="$2"; BASE_SET=1; shift 2 ;;
     *) echo "apply-ray-patch: unknown arg '$1'" >&2; exit 64 ;;
   esac
 done
 
-# Default expected base comes from the pinned file unless overridden on CLI.
-if [[ -z "$EXPECTED_BASE" && -f "$BASE_FILE" ]]; then
+# Default expected base comes from the pinned file unless overridden or skipped.
+if [[ "$SKIP_BASE" -eq 0 && "$BASE_SET" -eq 0 && -z "$EXPECTED_BASE" && -f "$BASE_FILE" ]]; then
   EXPECTED_BASE="$(tr -d '[:space:]' < "$BASE_FILE")"
 fi
 
@@ -65,15 +70,16 @@ fi
 
 # --- Guard 2: tree must be at the pinned upstream base ----------------------
 ACTUAL_BASE="$(git rev-parse HEAD)"
-if [[ -n "$EXPECTED_BASE" ]]; then
-  # Compare full SHAs; allow the pinned value to be a prefix of HEAD or vice versa.
+if [[ "$SKIP_BASE" -eq 1 ]]; then
+  echo "base:  $ACTUAL_BASE (guard skipped)"
+elif [[ -n "$EXPECTED_BASE" ]]; then
   if [[ "$ACTUAL_BASE" != "$EXPECTED_BASE" && "$ACTUAL_BASE" != "${EXPECTED_BASE}("* && "${ACTUAL_BASE:0:${#EXPECTED_BASE}}" != "$EXPECTED_BASE" ]]; then
     echo "ERROR: base-commit mismatch." >&2
     echo "  expected upstream base: $EXPECTED_BASE" >&2
     echo "  current HEAD:           $ACTUAL_BASE" >&2
     echo "  The patch was cut against a different upstream commit." >&2
     echo "  Either checkout the pinned base, or re-cut the patch and update $BASE_FILE," >&2
-    echo "  or re-run with --3way to merge onto the drifted base." >&2
+    echo "  or re-run with --3way / --skip-base." >&2
     exit 3
   fi
   echo "base:  $ACTUAL_BASE (matches pinned)"
@@ -113,9 +119,6 @@ echo "-- applying"
 # shellcheck disable=SC2086
 if ! git apply $THREEWAY "$PATCH"; then
   if [[ -n "$THREEWAY" ]]; then
-    # In 3-way mode a non-zero exit usually means "applied with conflicts to
-    # resolve" — the normal rebase outcome, NOT a hard failure. Distinguish it
-    # with its own exit code (6) so CI can branch on it.
     echo "MERGE CONFLICTS: 3-way apply left conflicts to resolve." >&2
     echo "  Resolve the <<<<<<< markers (git status shows unmerged files), then:" >&2
     echo "    git add -A && git commit" >&2
