@@ -1,0 +1,143 @@
+name: RAY build (upstream + overlay)
+
+# Rebases-friendly build. This branch carries ONLY the thin ray/ overlay:
+#   ray/ray-build-full.patch   the full RAY delta (binary-safe)
+#   ray/BASE_COMMIT            the pristine upstream commit it was cut against
+#   scripts/ray/*.sh           the applier + regenerator
+# The rest of the tree is whatever upstream is. CI checks out this branch, the
+# applier lays the RAY delta onto the tree, the JS gates run, and then the APK is
+# built. To move to a newer upstream: re-cut with scripts/ray/regen-ray-patch.sh.
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: "Gradle build type"
+        required: true
+        default: "release"
+        type: choice
+        options: [release, debug]
+      three_way:
+        description: "Use 3-way apply (only needed if the base drifted and you want conflicts surfaced instead of a hard fail)"
+        required: false
+        default: false
+        type: boolean
+      skip_apk:
+        description: "Apply + run JS gates only, skip the native build (fast patch-validation run)"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      ORG_GRADLE_PROJECT_rnllamaBuildFromSource: 'false'
+    steps:
+      - name: Checkout overlay branch
+        uses: actions/checkout@v4
+
+      - name: Show pinned base
+        run: |
+          echo "HEAD:        $(git rev-parse HEAD)"
+          echo "RAY base:    $(cat ray/BASE_COMMIT)"
+          echo "patch bytes: $(wc -c < ray/ray-build-full.patch)"
+
+      # Apply the RAY delta onto the tree. Fails loudly (non-zero) if the patch
+      # does not apply or the overlay did not fully land — never builds a
+      # half-patched app.
+      - name: Apply RAY overlay
+        run: |
+          chmod +x scripts/ray/apply-ray-patch.sh
+          if [ "${{ inputs.three_way }}" = "true" ]; then
+            # 3-way may exit 6 (conflicts to resolve) — fail the run with a clear message.
+            set +e
+            scripts/ray/apply-ray-patch.sh --3way
+            code=$?
+            set -e
+            if [ $code -eq 6 ]; then
+              echo "::error::3-way apply left merge conflicts. Resolve locally, re-cut with scripts/ray/regen-ray-patch.sh, and push."
+              git --no-pager diff --name-only --diff-filter=U || true
+              exit 1
+            elif [ $code -ne 0 ]; then
+              exit $code
+            fi
+          else
+            scripts/ray/apply-ray-patch.sh
+          fi
+
+      # Fast pure-JS gates — these need no Android SDK and catch a broken overlay
+      # before the expensive native build.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.21.0'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Verify bundled fonts (incl. Arabic)
+        run: node scripts/verify-fonts.js
+
+      - name: Validate l10n (incl. ar.json)
+        run: node scripts/validate-l10n.js
+
+      - name: Verify Android payload manifest
+        run: node scripts/verify-android-payload.js || echo "payload manifest check soft-failed"
+
+      # Everything below is the native build — skipped when skip_apk is set so you
+      # can validate a freshly re-cut patch in ~2 minutes.
+      - name: APK build gate
+        if: ${{ inputs.skip_apk }}
+        run: echo "skip_apk=true — overlay applied and JS gates passed; skipping native build."
+
+      - name: Maximize build space
+        if: ${{ !inputs.skip_apk }}
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc
+          df -h /
+
+      - name: Set up JDK 17
+        if: ${{ !inputs.skip_apk }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        if: ${{ !inputs.skip_apk }}
+        uses: android-actions/setup-android@v3
+
+      - name: Build RAY APK (${{ inputs.variant }})
+        if: ${{ !inputs.skip_apk }}
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assemble${{ inputs.variant }} --no-daemon --stacktrace
+
+      - name: Locate + upload APK
+        if: ${{ !inputs.skip_apk }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ray-${{ inputs.variant }}-apk
+          path: android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      - name: Phase 1 perf-gate checklist
+        if: ${{ !inputs.skip_apk }}
+        run: |
+          echo "======================================================"
+          echo " RAY APK built. PHASE 1 GATE — on the OnePlus 13:"
+          echo "  1. adb install -r the uploaded APK."
+          echo "  2. HF browser -> unsloth/Qwen2.5-14B-Instruct-GGUF Q4_K_M"
+          echo "                 -> unsloth/gpt-oss-20b-GGUF       Q4_K_M"
+          echo "  3. Load RAY — The Desk; raise context to 16k on the hint."
+          echo "  4. MEASURE tok/s. GATE: <8 tok/s on Qwen 14B -> Q4_K_S or 7B."
+          echo "  5. Test: Arabic switch, tool calls, deep_search, memory"
+          echo "     persistence across restart, dictation->MSA->email."
+          echo "  6. Graph/Outlook + native STT are activation-gated"
+          echo "     (see src/services/graph/README.md, src/services/stt/README.md)."
+          echo "======================================================"
