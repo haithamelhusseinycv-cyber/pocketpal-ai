@@ -53,7 +53,7 @@ jobs:
           if [ "${{ inputs.three_way }}" = "true" ]; then
             # 3-way may exit 6 (conflicts to resolve) — fail the run with a clear message.
             set +e
-            scripts/ray/apply-ray-patch.sh --3way
+            scripts/ray/apply-ray-patch.sh --3way --base ""
             code=$?
             set -e
             if [ $code -eq 6 ]; then
@@ -64,7 +64,7 @@ jobs:
               exit $code
             fi
           else
-            scripts/ray/apply-ray-patch.sh
+            scripts/ray/apply-ray-patch.sh --base ""
           fi
 
       # Fast pure-JS gates — these need no Android SDK and catch a broken overlay
