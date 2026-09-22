@@ -119,7 +119,14 @@ jobs:
 
       - name: Setup Android SDK
         if: ${{ !inputs.skip_apk }}
-        uses: android-actions/setup-android@v3
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;27.3.13750724" \
+            "cmake;3.22.1"
 
       - name: Build RAY APK (${{ inputs.variant }})
         if: ${{ !inputs.skip_apk }}
