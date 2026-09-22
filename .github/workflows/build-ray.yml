@@ -131,6 +131,30 @@ jobs:
             "ndk;27.3.13750724" \
             "cmake;3.22.1"
 
+      - name: Create dummy google-services.json for CI
+        if: ${{ !inputs.skip_apk }}
+        run: |
+          cat > android/app/google-services.json << 'EOL'
+          {
+            "project_info": {
+              "project_number": "000000000000",
+              "project_id": "dummy-project-for-ci",
+              "storage_bucket": "dummy-project-for-ci.appspot.com"
+            },
+            "client": [{
+              "client_info": {
+                "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
+                "android_client_info": {
+                  "package_name": "com.pocketpalai"
+                }
+              },
+              "api_key": [{
+                "current_key": "dummy-api-key-for-ci-builds"
+              }]
+            }]
+          }
+          EOL
+
       - name: Build RAY APK (${{ inputs.variant }})
         if: ${{ !inputs.skip_apk }}
         working-directory: android
