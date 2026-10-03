@@ -89,6 +89,11 @@ jobs:
             scripts/ray/apply-ray-patch.sh
           fi
 
+      - name: Apply critical dependency fixes
+        run: |
+          git apply --check ray/security-dependencies.patch
+          git apply ray/security-dependencies.patch
+
       # Fast pure-JS gates — these need no Android SDK and catch a broken overlay
       # before the expensive native build.
       - name: Set up Node.js
