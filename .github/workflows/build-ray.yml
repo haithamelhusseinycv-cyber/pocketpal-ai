@@ -106,8 +106,8 @@ jobs:
       - name: Validate l10n (incl. ar.json)
         run: node scripts/validate-l10n.js
 
-      - name: Verify Android payload manifest
-        run: node scripts/verify-android-payload.js
+      - name: Inspect expected Android payload variants
+        run: node scripts/verify-android-payload.js --print-variants
 
       # Everything below is the native build — skipped when skip_apk is set so you
       # can validate a freshly re-cut patch in ~2 minutes.
@@ -139,6 +139,16 @@ jobs:
         run: |
           chmod +x ./gradlew
           ./gradlew assemble${{ inputs.variant }} --no-daemon --stacktrace
+
+      - name: Verify built Android payloads
+        if: ${{ !inputs.skip_apk }}
+        run: |
+          set -euo pipefail
+          mapfile -t apks < <(find android/app/build/outputs/apk -name '*.apk' -type f)
+          [ "${#apks[@]}" -gt 0 ] || { echo "::error::No APKs found for payload validation"; exit 1; }
+          for apk in "${apks[@]}"; do
+            node scripts/verify-android-payload.js --apk "$apk"
+          done
 
       - name: Locate + upload APK
         if: ${{ !inputs.skip_apk }}
