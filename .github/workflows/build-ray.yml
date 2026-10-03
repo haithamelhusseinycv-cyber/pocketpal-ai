@@ -42,12 +42,29 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Show pinned base
         run: |
           echo "HEAD:        $(git rev-parse HEAD)"
           echo "RAY base:    $(cat ray/BASE_COMMIT)"
           echo "patch bytes: $(wc -c < ray/ray-build-full.patch)"
+
+      - name: Prepare pristine pinned upstream
+        run: |
+          set -euo pipefail
+          base="$(tr -d '[:space:]' < ray/BASE_COMMIT)"
+          [[ "$base" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid RAY base"; exit 1; }
+          git cat-file -e "$base^{commit}"
+          kit="$RUNNER_TEMP/ray-overlay-kit"
+          mkdir -p "$kit"
+          cp -a ray "$kit/ray"
+          cp -a scripts/ray "$kit/scripts-ray"
+          git checkout --detach "$base"
+          mkdir -p scripts
+          cp -a "$kit/ray" ray
+          cp -a "$kit/scripts-ray" scripts/ray
+          echo "Build source: $(git rev-parse HEAD)"
 
       # Apply the RAY delta onto the tree. Fails loudly (non-zero) if the patch
       # does not apply or the overlay did not fully land — never builds a
