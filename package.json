@@ -51,7 +51,7 @@
     "chat-formatter": "^0.3.4",
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.18",
-    "expr-eval": "^2.0.2",
+    "expr-eval": "npm:expr-eval-fork@3.0.3",
     "llama.rn": "0.13.0-rc.3",
     "marked": "^16.4.0",
     "mobx": "^6.15.0",
@@ -140,5 +140,10 @@
     "android": {
       "javaPackageName": "com.pocketpal.specs"
     }
+  },
+  "resolutions": {
+    "websocket-driver": "0.7.5",
+    "shell-quote": "1.8.4",
+    "protobufjs": "7.5.5"
   }
 }
