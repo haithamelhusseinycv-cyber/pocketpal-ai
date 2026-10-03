@@ -162,6 +162,6 @@ jobs:
           tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
       - name: Scan reachable Git history without printing credentials
         run: |
-          # Exact historical CocoaPods checksum findings only; preserve upstream files.
-          printf '%s\n' 'ceb6d13e230fa4ee09160908eef531a4d0e44855:ios/Podfile.lock:generic-api-key:3743' 'b43e3e0c441df65ddd2f495d0825a6afaaa0e9f7:ios/Podfile.lock:generic-api-key:2932' 'c44b1d2b6462495ceb33e39184d8cc6d4d59c0e4:ios/Podfile.lock:generic-api-key:2924' 'c44b1d2b6462495ceb33e39184d8cc6d4d59c0e4:ios/Podfile.lock:generic-api-key:2944' 'c44b1d2b6462495ceb33e39184d8cc6d4d59c0e4:ios/Podfile.lock:generic-api-key:3030' '2879c860d563dea46b866f4a8b73d585eb7ce4c4:ios/Podfile.lock:generic-api-key:2397' '2879c860d563dea46b866f4a8b73d585eb7ce4c4:ios/Podfile.lock:generic-api-key:2416' > /tmp/ray-gitleaksignore
+          # Exact historical CocoaPods checksums and the EncodingEngine JWT test fixture only.
+          printf '%s\n' 'ceb6d13e230fa4ee09160908eef531a4d0e44855:ios/Podfile.lock:generic-api-key:3743' 'b43e3e0c441df65ddd2f495d0825a6afaaa0e9f7:ios/Podfile.lock:generic-api-key:2932' 'c44b1d2b6462495ceb33e39184d8cc6d4d59c0e4:ios/Podfile.lock:generic-api-key:2924' 'c44b1d2b6462495ceb33e39184d8cc6d4d59c0e4:ios/Podfile.lock:generic-api-key:2944' 'c44b1d2b6462495ceb33e39184d8cc6d4d59c0e4:ios/Podfile.lock:generic-api-key:3030' '2879c860d563dea46b866f4a8b73d585eb7ce4c4:ios/Podfile.lock:generic-api-key:2397' '2879c860d563dea46b866f4a8b73d585eb7ce4c4:ios/Podfile.lock:generic-api-key:2416' '1fbeafe29d9905f68b58e6acfc470bb7922687da:ray/ray-build-full.patch:jwt:47933' > /tmp/ray-gitleaksignore
           /tmp/gitleaks git . --redact --no-banner --log-opts=--all --gitleaks-ignore-path=/tmp/ray-gitleaksignore
